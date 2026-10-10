@@ -1,7 +1,49 @@
 import logging
+import pandas as pd
 
 # Журнал для этого модуля; __name__ подставит имя файла — "validator"
 logger = logging.getLogger(__name__)
+
+# Ящик с инструментами для проверки типов: название ожидаемого типа -> функция-проверка
+TYPE_CHECKS = {
+    "numeric": pd.api.types.is_numeric_dtype,
+    "datetime": pd.api.types.is_datetime64_any_dtype,
+    "string": pd.api.types.is_string_dtype,
+}
+
+def check_types(df, expected):
+    """Проверяет, что типы колонок в DataFrame соответствуют ожидаемым.
+
+    Аргументы:
+        df (pd.DataFrame): Таблица с данными.
+        expected (dict): Словарь вида {название_колонки: ожидаемый_тип}.
+            Допустимые типы: "numeric", "datetime", "string".
+
+    Возвращает:
+        list: Список колонок с проблемами. Пустой список — всё в порядке.
+    """
+    problems = []  # сюда собираем все проблемные колонки — полный "акт"
+
+    for col, expected_type in expected.items():
+        # 1. Колонки нет в таблице — записываем и идём к следующей
+        if col not in df.columns:
+            logger.warning("Колонка '%s' не найдена в таблице", col)
+            problems.append(col)
+            continue
+
+        # 2. Достаём из "ящика" нужную проверку и применяем к колонке
+        checker = TYPE_CHECKS[expected_type]
+        if not checker(df[col]):
+            logger.warning(
+                "Колонка '%s' имеет тип %s, ожидается %s",
+                col, df[col].dtype, expected_type,
+            )
+            problems.append(col)
+
+    # 3. Итог проверки
+    if not problems:
+        logger.info("Все типы колонок соответствуют ожидаемым")
+    return problems
 
 def check_duplicates(df):
     """Проверяет наличие дубликатов в DataFrame."""
@@ -116,3 +158,10 @@ if __name__ == "__main__":
     detect_outliers_iqr(df, "kwh", group_by="customer_id")
     detect_outliers_zscore(df, "kwh")
     detect_outliers_zscore(df, "kwh", group_by="customer_id")
+
+    expected = {
+        "customer_id": "numeric",
+        "period": "datetime",
+        "kwh": "numeric",
+    }
+    check_types(df, expected)
