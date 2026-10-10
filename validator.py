@@ -46,7 +46,14 @@ def check_types(df, expected):
     return problems
 
 def check_duplicates(df):
-    """Проверяет наличие дубликатов в DataFrame."""
+    """Проверяет наличие полностью повторяющихся строк в DataFrame.
+
+    Аргументы:
+        df (pd.DataFrame): Таблица с данными.
+
+    Возвращает:
+        int: Количество найденных дубликатов.
+    """    
     duplicates = df.duplicated()
     count = duplicates.sum()
     if count > 0:
@@ -56,7 +63,14 @@ def check_duplicates(df):
     return count
 
 def check_missing(df):
-    """Проверяет наличие пропущенных значений в DataFrame."""
+    """Проверяет наличие пропущенных значений в каждой колонке DataFrame.
+
+    Аргументы:
+        df (pd.DataFrame): Таблица с данными.
+
+    Возвращает:
+        pd.Series: Количество пропусков по каждой колонке.
+    """
     missing = df.isnull().sum()
     total_missing = missing.sum()
     if total_missing > 0:
@@ -69,8 +83,6 @@ def check_missing(df):
 
     
     return missing
-
-
 
 def detect_outliers_iqr(df, column, group_by=None, k=1.5):
     """Находит выбросы методом межквартильного размаха (IQR).
