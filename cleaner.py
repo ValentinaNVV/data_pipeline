@@ -1,5 +1,6 @@
 import logging
-
+import numpy as np
+from validator import detect_outliers_iqr
 import pandas as pd
 
 # Журнал для этого модуля; __name__ подставит имя файла — "cleaner"
@@ -99,6 +100,73 @@ def fill_missing(df, column, strategy="median", group_by=None):
     )
     return df
 
+def replace_outliers(df, column, group_by=None):
+    """Заменяет выбросы (найденные методом IQR) на пропуски.
+
+    Аномальное значение считается недостоверным потреблением: оно удаляется
+    и далее обрабатывается как пропуск по правилам расчёта.
+
+    Аргументы:
+        df (pd.DataFrame): Таблица с данными.
+        column (str): Колонка, в которой ищем выбросы.
+        group_by (str, optional): Колонка для группировки (например, customer_id).
+
+    Возвращает:
+        pd.DataFrame: Новая таблица, где выбросы заменены на NaN.
+    """
+    df = df.copy()
+    mask = detect_outliers_iqr(df, column, group_by=group_by)
+    df.loc[mask, column] = np.nan
+    logger.info("Выбросы в '%s' заменены на пропуски: %d", column, mask.sum())
+    return df
+
+def fill_by_billing_rules(df, column="kwh", group_by="customer_id", date_column="period"):
+    """Заполняет пропуски по правилам расчёта при отсутствии показаний.
+
+    Порядок:
+        1. Расход того же месяца прошлого года.
+        2. Если его нет — расход ближайшего предыдущего месяца.
+        3. Если и его нет (начало периода) — ближайшего следующего месяца.
+
+    Важно: данные должны быть помесячными, без пропущенных месяцев
+    у каждого абонента (сдвиг на 12 строк = сдвиг на 12 месяцев).
+
+    Аргументы:
+        df (pd.DataFrame): Таблица с данными.
+        column (str): Колонка с расходом. По умолчанию "kwh".
+        group_by (str): Колонка с абонентом. По умолчанию "customer_id".
+        date_column (str): Колонка с расчётным периодом (тип datetime). По умолчанию "period".
+
+    Возвращает:
+        pd.DataFrame: Новая таблица без пропусков в колонке, отсортированная
+            по абоненту и периоду.
+    """
+    # Сортируем по абоненту и месяцу, чтобы сдвиги шли в правильном порядке
+    df = df.sort_values([group_by, date_column]).copy()
+
+    missing_before = df[column].isna().sum()
+    if missing_before == 0:
+        logger.info("Пропусков в '%s' нет", column)
+        return df
+
+    # Шаг 1: тот же месяц прошлого года (сдвиг на 12 строк внутри абонента)
+    year_ago = df.groupby(group_by)[column].shift(12)
+    df[column] = df[column].fillna(year_ago)
+    missing_after_step1 = df[column].isna().sum()
+
+    # Шаги 2 и 3: ближайший предыдущий месяц, затем ближайший следующий
+    df[column] = df.groupby(group_by)[column].ffill()
+    df[column] = df.groupby(group_by)[column].bfill()
+
+    logger.info(
+        "Заполнено пропусков в '%s': %d (по прошлому году: %d, по ближайшему месяцу: %d)",
+        column,
+        missing_before,
+        missing_before - missing_after_step1,
+        missing_after_step1,
+    )
+    return df
+
 if __name__ == "__main__":
     from loader import load_csv
 
@@ -114,3 +182,10 @@ if __name__ == "__main__":
 
     filled = fill_missing(df, "kwh", strategy="median", group_by="customer_id")
     print("Пропусков после заполнения:", filled["kwh"].isna().sum())
+
+    df = load_csv("data/consumption.csv")
+    df = remove_duplicates(df)
+    df = convert_dates(df, "period")
+    df = replace_outliers(df, "kwh", group_by="customer_id")
+    df = fill_by_billing_rules(df)
+    print("Пропусков после очистки:", df["kwh"].isna().sum())
