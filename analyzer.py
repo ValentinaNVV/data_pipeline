@@ -7,6 +7,7 @@ from cleaner import (
        remove_duplicates,
        replace_outliers,
    )
+from statsmodels.tsa.seasonal import seasonal_decompose
 
 # Журнал для этого модуля; __name__ подставит имя файла — "analyzer"
 logger = logging.getLogger(__name__)
@@ -86,6 +87,45 @@ def aggregate_monthly(df, column="kwh", date_column="period"):
     )
     return series
 
+# Названия месяцев для понятного лога: MONTHS[1] -> "январь"
+MONTHS = [
+    "", "январь", "февраль", "март", "апрель", "май", "июнь",
+    "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
+]
+
+
+def decompose_series(series, period=12):
+    """Раскладывает временной ряд на тренд, сезонность и остаток.
+
+    Используется аддитивная модель: значение = тренд + сезон + остаток.
+    Тренд считается скользящим средним, поэтому для первых и последних
+    period/2 точек он не определён (NaN).
+
+    Аргументы:
+        series (pd.Series): Временной ряд с индексом типа datetime.
+        period (int): Длина сезонного цикла. По умолчанию 12 (месяцев).
+
+    Возвращает:
+        DecomposeResult: Объект с атрибутами trend, seasonal и resid (pd.Series).
+    """
+    result = seasonal_decompose(series, model="additive", period=period)
+
+    # Рост по тренду: от первого до последнего известного значения, в %
+    trend = result.trend.dropna()
+    growth = (trend.iloc[-1] / trend.iloc[0] - 1) * 100
+
+    # Размах сезона и месяцы пика и спада
+    seasonal = result.seasonal
+    amplitude = seasonal.max() - seasonal.min()
+    peak_month = MONTHS[seasonal.idxmax().month]
+    low_month = MONTHS[seasonal.idxmin().month]
+
+    logger.info(
+        "Рост по тренду: %.1f%%; размах сезона: %.0f; пик: %s; спад: %s",
+        growth, amplitude, peak_month, low_month,
+    )
+    return result
+
 if __name__ == "__main__":
     from loader import load_csv, load_excel
 
@@ -117,3 +157,7 @@ if __name__ == "__main__":
     # Агрегируем данные по месяцам
     monthly = aggregate_monthly(df)
     print(monthly.head(12))
+
+    # Разлагаем временной ряд 
+    decomposition = decompose_series(monthly)
+    print(decomposition.seasonal.head(12))
