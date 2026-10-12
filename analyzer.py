@@ -55,6 +55,37 @@ def merge_customer_data(consumption, customers):
         logger.info("Таблицы объединены: %d строк, %d колонок", *merged.shape)
     return merged
 
+def aggregate_monthly(df, column="kwh", date_column="period"):
+    """Суммирует значения колонки по месяцам и возвращает временной ряд.
+
+    Аргументы:
+        df (pd.DataFrame): Таблица с данными.
+        column (str): Колонка для суммирования. По умолчанию "kwh".
+        date_column (str): Колонка с датами. По умолчанию "period".
+
+    Возвращает:
+        pd.Series: Временной ряд — сумма значений за каждый месяц,
+            индекс — первое число месяца (datetime).
+    """
+    df = df.copy()
+    df[date_column] = pd.to_datetime(df[date_column], errors="coerce")
+
+    # Приводим каждую дату к её месяцу и суммируем внутри месяца
+    month = df[date_column].dt.to_period("M")
+    series = df.groupby(month)[column].sum()
+
+    # Индекс из "периодов" переводим в обычные даты (первое число месяца)
+    series.index = series.index.to_timestamp()
+    series.index.name = "month"
+
+    logger.info(
+        "Данные агрегированы по месяцам: %d месяцев (%s — %s)",
+        len(series),
+        series.index.min().strftime("%m.%Y"),
+        series.index.max().strftime("%m.%Y"),
+    )
+    return series
+
 if __name__ == "__main__":
     from loader import load_csv, load_excel
 
@@ -82,3 +113,7 @@ if __name__ == "__main__":
     for ctype in ["физлицо", "юрлицо"]:
         subset = merged[merged["customer_type"] == ctype]
         print(ctype, basic_stats(subset, "kwh"))
+
+    # Агрегируем данные по месяцам
+    monthly = aggregate_monthly(df)
+    print(monthly.head(12))
