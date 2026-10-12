@@ -167,25 +167,99 @@ def fill_by_billing_rules(df, column="kwh", group_by="customer_id", date_column=
     )
     return df
 
+def encode_label(df, columns):
+    """Преобразует категориальные колонки в числовые с помощью Label Encoding.
+
+    Аргументы:
+        df (pd.DataFrame): Таблица с данными.
+        columns (list of str): Список колонок для кодирования.
+
+    Возвращает:
+        pd.DataFrame: Новая таблица с закодированными колонками.
+    """
+    df = df.copy()
+    for col in columns:
+        if col not in df.columns:
+            logger.warning("Колонка '%s' не найдена в таблице", col)
+            continue
+        categories = df[col].astype('category')
+        # Расшифровка до замены: {0: 'физлицо', 1: 'юрлицо'}
+        mapping = dict(enumerate(categories.cat.categories))
+        df[col] = categories.cat.codes
+        logger.info("Колонка '%s' закодирована: %s", col, mapping)
+    return df
+
+def encode_onehot(df, columns):
+    """Преобразует категориальные колонки в бинарные с помощью One-Hot Encoding.
+
+    Аргументы:
+        df (pd.DataFrame): Таблица с данными.
+        columns (list of str): Список колонок для кодирования.
+
+    Возвращает:
+        pd.DataFrame: Новая таблица с бинарными колонками.
+    """
+    df = df.copy()
+    for col in columns:
+        if col not in df.columns:
+            logger.warning("Колонка '%s' не найдена в таблице", col)
+            continue
+        dummies = pd.get_dummies(df[col], prefix=col, dtype=int)
+        df = pd.concat([df, dummies], axis=1)
+        df = df.drop(columns=[col])
+        logger.info("Колонка '%s' преобразована в: %s", col, list(dummies.columns))
+    return df
+
+def scale_features(df, columns, method="standard"):
+    """Масштабирует числовые колонки.
+
+    Аргументы:
+        df (pd.DataFrame): Таблица с данными.
+        columns (list of str): Список колонок для масштабирования.
+        method (str): Метод масштабирования ("standard", "minmax").
+    
+    Исключения:
+        ValueError: Если указан неизвестный метод.
+
+    Возвращает:
+        pd.DataFrame: Новая таблица с масштабированными колонками.
+    """
+    if method not in ("standard", "minmax"):
+        raise ValueError(f"Неизвестный метод масштабирования: '{method}'. Допустимо: standard, minmax")
+    df = df.copy()
+    for col in columns:
+        if col not in df.columns:
+            logger.warning("Колонка '%s' не найдена в таблице", col)
+            continue
+        if method == "standard":
+            df[col] = (df[col] - df[col].mean()) / df[col].std()
+        elif method == "minmax":
+            df[col] = (df[col] - df[col].min()) / (df[col].max() - df[col].min())
+        logger.info("Колонка '%s' масштабирована методом '%s'", col, method)
+    return df
+
 if __name__ == "__main__":
-    from loader import load_csv
+    from loader import load_csv, load_excel
 
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    df = load_csv("data/consumption.csv")
-    df = remove_duplicates(df)
-    df = convert_dates(df, "period")
-    print(df.dtypes)
-
-    filled = fill_missing(df, "kwh", strategy="median", group_by="customer_id")
-    print("Пропусков после заполнения:", filled["kwh"].isna().sum())
-
+    # Очистка таблицы потребления
     df = load_csv("data/consumption.csv")
     df = remove_duplicates(df)
     df = convert_dates(df, "period")
     df = replace_outliers(df, "kwh", group_by="customer_id")
     df = fill_by_billing_rules(df)
     print("Пропусков после очистки:", df["kwh"].isna().sum())
+
+    # Кодирование категорий в таблице абонентов
+    customers = load_excel("data/customers.xlsx")
+    customers = encode_label(customers, ["tariff", "customer_type"])
+    customers = encode_onehot(customers, ["district"])
+    print(customers.head())
+
+    # Масштабирование
+    scaled = scale_features(df, ["kwh"], method="standard")
+    print(scaled["kwh"].describe())
