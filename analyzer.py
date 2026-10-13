@@ -126,6 +126,38 @@ def decompose_series(series, period=12):
     )
     return result
 
+def detect_anomalies(result, threshold=3):
+    """Ищет аномальные месяцы по остатку временного ряда (метод Z-score).
+
+    Аномалией считается месяц, где остаток отклоняется от среднего остатка
+    больше чем на threshold стандартных отклонений.
+
+    Аргументы:
+        result (DecomposeResult): Результат decompose_series.
+        threshold (float): Порог в стандартных отклонениях. По умолчанию 3.
+
+    Возвращает:
+        pd.Series: Остатки аномальных месяцев (индекс — дата).
+            Пустой ряд, если аномалий нет.
+    """
+    # У первых и последних period/2 месяцев остатка нет — убираем пустые
+    resid = result.resid.dropna()
+    mean = resid.mean()
+    std = resid.std()
+
+    # |остаток - среднее| > threshold * std  — то же самое, что |Z| > threshold
+    anomalies = resid[(resid - mean).abs() > threshold * std]
+
+    if anomalies.empty:
+        logger.info("Аномальных месяцев не найдено (порог %.1f)", threshold)
+    else:
+        logger.warning(
+            "Найдено аномальных месяцев: %d — %s",
+            len(anomalies),
+            [d.strftime("%m.%Y") for d in anomalies.index],
+        )
+    return anomalies
+
 if __name__ == "__main__":
     from loader import load_csv, load_excel
 
@@ -161,3 +193,13 @@ if __name__ == "__main__":
     # Разлагаем временной ряд 
     decomposition = decompose_series(monthly)
     print(decomposition.seasonal.head(12))
+
+    # 1. На очищенных данных
+    detect_anomalies(decomposition)
+
+    # 2. На «сырых» данных — без очистки, только даты переведены
+    raw = load_csv("data/consumption.csv")
+    raw = convert_dates(raw, "period")
+    raw_monthly = aggregate_monthly(raw)
+    raw_decomposition = decompose_series(raw_monthly)
+    detect_anomalies(raw_decomposition)
