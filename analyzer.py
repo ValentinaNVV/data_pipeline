@@ -56,13 +56,14 @@ def merge_customer_data(consumption, customers):
         logger.info("Таблицы объединены: %d строк, %d колонок", *merged.shape)
     return merged
 
-def aggregate_monthly(df, column="kwh", date_column="period"):
+def aggregate_monthly(df, column="kwh", date_column="period", agg="sum"):
     """Суммирует значения колонки по месяцам и возвращает временной ряд.
 
     Аргументы:
         df (pd.DataFrame): Таблица с данными.
         column (str): Колонка для суммирования. По умолчанию "kwh".
         date_column (str): Колонка с датами. По умолчанию "period".
+        agg (str): Метод агрегации: "sum", "mean", "median" и т.д. По умолчанию "sum".
 
     Возвращает:
         pd.Series: Временной ряд — сумма значений за каждый месяц,
@@ -73,7 +74,7 @@ def aggregate_monthly(df, column="kwh", date_column="period"):
 
     # Приводим каждую дату к её месяцу и суммируем внутри месяца
     month = df[date_column].dt.to_period("M")
-    series = df.groupby(month)[column].sum()
+    series = df.groupby(month)[column].agg(agg)
 
     # Индекс из "периодов" переводим в обычные даты (первое число месяца)
     series.index = series.index.to_timestamp()
@@ -203,3 +204,22 @@ if __name__ == "__main__":
     raw_monthly = aggregate_monthly(raw)
     raw_decomposition = decompose_series(raw_monthly)
     detect_anomalies(raw_decomposition)
+
+    from loader import load_api
+
+    weather = load_api(
+        "https://archive-api.open-meteo.com/v1/archive",
+        params={
+            "latitude": 55.75,
+            "longitude": 37.62,
+            "start_date": "2023-01-01",
+            "end_date": "2025-12-31",
+            "daily": "temperature_2m_mean",
+            "timezone": "Europe/Moscow",
+        },
+        data_key="daily",
+    )
+    monthly_temp = aggregate_monthly(
+        weather, column="temperature_2m_mean", date_column="time", agg="mean"
+    )
+    print(monthly_temp.head(12))
