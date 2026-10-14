@@ -8,6 +8,10 @@ from cleaner import (
        replace_outliers,
    )
 from statsmodels.tsa.seasonal import seasonal_decompose
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
 
 # Журнал для этого модуля; __name__ подставит имя файла — "analyzer"
 logger = logging.getLogger(__name__)
@@ -57,22 +61,22 @@ def merge_customer_data(consumption, customers):
     return merged
 
 def aggregate_monthly(df, column="kwh", date_column="period", agg="sum"):
-    """Суммирует значения колонки по месяцам и возвращает временной ряд.
+    """Агрегирует значения колонки по месяцам и возвращает временной ряд.
 
     Аргументы:
         df (pd.DataFrame): Таблица с данными.
-        column (str): Колонка для суммирования. По умолчанию "kwh".
+        column (str): Колонка для агрегации. По умолчанию "kwh".
         date_column (str): Колонка с датами. По умолчанию "period".
         agg (str): Метод агрегации: "sum", "mean", "median" и т.д. По умолчанию "sum".
 
     Возвращает:
-        pd.Series: Временной ряд — сумма значений за каждый месяц,
+        pd.Series: Временной ряд — агрегированное значение за каждый месяц,
             индекс — первое число месяца (datetime).
     """
     df = df.copy()
     df[date_column] = pd.to_datetime(df[date_column], errors="coerce")
 
-    # Приводим каждую дату к её месяцу и суммируем внутри месяца
+    # Приводим каждую дату к её месяцу и агрегируем внутри месяца
     month = df[date_column].dt.to_period("M")
     series = df.groupby(month)[column].agg(agg)
 
@@ -81,10 +85,11 @@ def aggregate_monthly(df, column="kwh", date_column="period", agg="sum"):
     series.index.name = "month"
 
     logger.info(
-        "Данные агрегированы по месяцам: %d месяцев (%s — %s)",
-        len(series),
-        series.index.min().strftime("%m.%Y"),
-        series.index.max().strftime("%m.%Y"),
+       "Данные агрегированы по месяцам (%s): %d месяцев (%s — %s)",
+       agg,
+       len(series),
+       series.index.min().strftime("%m.%Y"),
+       series.index.max().strftime("%m.%Y"),
     )
     return series
 
@@ -159,6 +164,83 @@ def detect_anomalies(result, threshold=3):
         )
     return anomalies
 
+def build_features(consumption, customers, monthly_temp):
+    """Собирает таблицу признаков для модели прогноза расхода.
+
+    Признаки: тип абонента, тариф, район (One-Hot), номер месяца,
+    средняя температура месяца, расход того же месяца прошлого года.
+    Строки без расхода прошлого года (первый год данных) отбрасываются.
+
+    Аргументы:
+        consumption (pd.DataFrame): Очищенная таблица потребления
+            (customer_id, period в формате datetime, kwh).
+        customers (pd.DataFrame): Справочник абонентов, уже закодированный
+            (encode_label для tariff и customer_type, encode_onehot для district).
+        monthly_temp (pd.Series): Средняя температура по месяцам (индекс — дата).
+
+    Возвращает:
+        tuple: (X, y), где X (pd.DataFrame) — признаки, y (pd.Series) — расход kwh.
+    """
+    df = merge_customer_data(consumption, customers)
+    df = df.sort_values(["customer_id", "period"])
+
+    # Номер месяца: 1 — январь, ..., 12 — декабрь
+    df["month"] = df["period"].dt.month
+
+    # Температура: каждой дате ставим в соответствие среднюю температуру её месяца
+    df["temperature"] = df["period"].map(monthly_temp)
+
+    # Расход того же месяца прошлого года (сдвиг на 12 месяцев внутри абонента)
+    df["kwh_last_year"] = df.groupby("customer_id")["kwh"].shift(12)
+    df = df.dropna(subset=["kwh_last_year", "temperature"])
+
+    # Убираем то, что не является признаком: номера и даты модели не нужны
+    X = df.drop(columns=["kwh", "customer_id", "account_number", "period"])
+    y = df["kwh"]
+
+    logger.info("Таблица признаков: %d строк, признаки: %s", len(X), list(X.columns))
+    return X, y
+
+def train_and_evaluate(X, y, test_size=0.2, random_state=42):
+    """Обучает модели регрессии и оценивает их качество на отложенной выборке.
+
+    Сравниваются линейная регрессия и случайный лес.
+
+    Аргументы:
+        X (pd.DataFrame): Признаки.
+        y (pd.Series): Целевая переменная (расход kwh).
+        test_size (float): Доля данных для проверки. По умолчанию 0.2 (20%).
+        random_state (int): Зерно случайности для воспроизводимости. По умолчанию 42.
+
+    Возвращает:
+        dict: {название_модели: {"model": обученная модель,
+            "MAE": ..., "RMSE": ..., "R2": ...}}.
+    """
+    # Делим данные: 80% на обучение ("учебник"), 20% на проверку ("экзамен")
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=random_state
+    )
+
+    models = {
+        "LinearRegression": LinearRegression(),
+        "RandomForest": RandomForestRegressor(n_estimators=100, random_state=random_state),
+    }
+
+    results = {}
+    for name, model in models.items():
+        model.fit(X_train, y_train)        # обучение на примерах с ответами
+        y_pred = model.predict(X_test)     # прогноз на новых примерах
+
+        metrics = {
+            "MAE": round(float(mean_absolute_error(y_test, y_pred)), 2),
+            "RMSE": round(float(np.sqrt(mean_squared_error(y_test, y_pred))), 2),
+            "R2": round(float(r2_score(y_test, y_pred)), 4),
+        }
+        results[name] = {"model": model, **metrics}
+        logger.info("Модель %s: %s", name, metrics)
+
+    return results
+
 if __name__ == "__main__":
     from loader import load_csv, load_excel
 
@@ -223,3 +305,12 @@ if __name__ == "__main__":
         weather, column="temperature_2m_mean", date_column="time", agg="mean"
     )
     print(monthly_temp.head(12))
+
+    from cleaner import encode_label, encode_onehot
+
+    customers_enc = load_excel("data/customers.xlsx")
+    customers_enc = encode_label(customers_enc, ["tariff", "customer_type"])
+    customers_enc = encode_onehot(customers_enc, ["district"])
+
+    X, y = build_features(df, customers_enc, monthly_temp)
+    results = train_and_evaluate(X, y)
