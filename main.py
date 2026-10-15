@@ -4,6 +4,10 @@ import logging
 from pathlib import Path
 
 import pandas as pd
+from datetime import date
+
+from dotenv import load_dotenv
+
 
 from analyzer import (
     MONTHS,
@@ -30,8 +34,12 @@ from reporter import (
     plot_interactive,
     plot_seasonality_heatmap,
     plot_trend,
+    send_report_email,
 )
 from validator import check_duplicates, check_missing, check_types, detect_outliers_iqr
+
+# Загружаем настройки из .env (база данных, почта)
+load_dotenv()
 
 logger = logging.getLogger("main")
 
@@ -156,6 +164,17 @@ def run_pipeline(output_dir="reports"):
         tables={"Базовые статистики, кВт·ч": stats_df, "Качество моделей": metrics_df},
         images=[trend_png, heatmap_png],
     )
+
+     # 7. Рассылка. Ошибка почты не должна "уронить" конвейер: отчёты уже сохранены
+    try:
+        send_report_email(
+            attachments=[excel_path, pdf_path],
+            subject=f"Отчёт по потреблению электроэнергии от {date.today():%d.%m.%Y}",
+            body="\n".join(["Добрый день!", "", "Во вложении автоматический отчёт.", "", *summary]),
+        )
+    except Exception:
+        # logger.exception пишет в журнал и сообщение, и подробности ошибки
+        logger.exception("Не удалось отправить отчёт по почте")
 
     logger.info("=== Конвейер завершён ===")
     return {

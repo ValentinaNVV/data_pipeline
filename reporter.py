@@ -5,6 +5,11 @@ import logging
 from pathlib import Path
 
 import matplotlib
+import mimetypes
+import os
+import smtplib
+import ssl
+from email.message import EmailMessage
 
 # Рисуем сразу в файлы, без открытия окон — нужно для запуска по расписанию
 matplotlib.use("Agg")
@@ -280,6 +285,59 @@ def build_pdf_report(path, title, summary, tables, images):
     logger.info("PDF-отчёт сохранён: %s", path)
     return path
 
+
+def send_report_email(attachments, subject, body, recipients=None):
+    """Отправляет отчёты по email через SMTP (SSL).
+
+    Настройки берутся из переменных окружения (.env): SMTP_HOST, SMTP_PORT,
+    SMTP_USER, SMTP_PASSWORD, REPORT_RECIPIENTS (адреса через запятую).
+    Если настройки не заданы, отправка пропускается с предупреждением —
+    так проект можно запускать и без почты.
+
+    Аргументы:
+        attachments (list): Пути к файлам для вложения.
+        subject (str): Тема письма.
+        body (str): Текст письма.
+        recipients (list of str, optional): Получатели. По умолчанию — из REPORT_RECIPIENTS.
+
+    Возвращает:
+        bool: True, если письмо отправлено, False, если отправка пропущена.
+    """
+    host = os.getenv("SMTP_HOST")
+    port = int(os.getenv("SMTP_PORT", "465"))
+    user = os.getenv("SMTP_USER")
+    password = os.getenv("SMTP_PASSWORD")
+    if recipients is None:
+        recipients = [r.strip() for r in os.getenv("REPORT_RECIPIENTS", "").split(",") if r.strip()]
+
+    if not all([host, user, password]) or not recipients:
+        logger.warning("Настройки почты не заданы в .env — отправка отчёта пропущена")
+        return False
+
+    # Собираем письмо: заголовки, текст, вложения
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = user
+    msg["To"] = ", ".join(recipients)
+    msg.set_content(body)
+
+    for file_path in attachments:
+        file_path = Path(file_path)
+        # Определяем тип файла по расширению (например, application/pdf)
+        mime_type, _ = mimetypes.guess_type(file_path.name)
+        maintype, subtype = (mime_type or "application/octet-stream").split("/", 1)
+        msg.add_attachment(
+            file_path.read_bytes(), maintype=maintype, subtype=subtype, filename=file_path.name
+        )
+
+    # Защищённое соединение с почтовым сервером, вход и отправка
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL(host, port, context=context, timeout=30) as server:
+        server.login(user, password)
+        server.send_message(msg)
+
+    logger.info("Отчёт отправлен: %s (вложения: %s)", recipients, [Path(p).name for p in attachments])
+    return True
 
 if __name__ == "__main__":
     from analyzer import aggregate_monthly, decompose_series
