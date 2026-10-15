@@ -1,52 +1,105 @@
-import pandas as pd
+# Загрузка данных из разных источников: CSV, Excel, PostgreSQL, внешний API
+
+import logging
 from pathlib import Path
-from db import get_engine
+
+import pandas as pd
 import requests
 
+from db import get_engine
 
-#функция для загрузки CSV-файла в DataFrame
-def load_csv(path):    
+# Журнал для этого модуля; __name__ подставит имя файла — "loader"
+logger = logging.getLogger(__name__)
+
+
+#функция для загрузки данных из CSV-файла
+def load_csv(path):
+    """Загружает данные из CSV-файла.
+
+    Аргументы:
+        path (str | Path): Путь к CSV-файлу.
+
+    Возвращает:
+        pd.DataFrame: Загруженная таблица.
+
+    Исключения:
+        FileNotFoundError: Если файл не найден.
+    """
     if not Path(path).exists():
+        logger.error("Файл не найден: %s", path)
         raise FileNotFoundError(f"Файл {path} не найден.")
-    return pd.read_csv(path)
+    df = pd.read_csv(path)
+    logger.info("Загружен CSV %s: %d строк, %d колонок", path, *df.shape)
+    return df
 
-#функция для загрузки Excel-файла в DataFrame
+# функция для загрузки данных из Excel-файла
 def load_excel(path):
-    if not Path(path).exists():
-        raise FileNotFoundError(f"Файл {path} не найден.")
-    return pd.read_excel(path)
+    """Загружает данные из Excel-файла (первый лист).
 
+    Аргументы:
+        path (str | Path): Путь к файлу .xlsx.
+
+    Возвращает:
+        pd.DataFrame: Загруженная таблица.
+
+    Исключения:
+        FileNotFoundError: Если файл не найден.
+    """
+    if not Path(path).exists():
+        logger.error("Файл не найден: %s", path)
+        raise FileNotFoundError(f"Файл {path} не найден.")
+    df = pd.read_excel(path)
+    logger.info("Загружен Excel %s: %d строк, %d колонок", path, *df.shape)
+    return df
+
+# функция для загрузки данных из PostgreSQL
 def load_sql(query):
-    """Выполняет SQL-запрос и возвращает результат в виде DataFrame."""
+    """Выполняет SQL-запрос к PostgreSQL и возвращает результат.
+
+    Параметры подключения берутся из .env (см. db.get_engine).
+
+    Аргументы:
+        query (str): Текст SQL-запроса (поддерживаются JOIN, агрегаты и т.д.).
+
+    Возвращает:
+        pd.DataFrame: Результат запроса.
+    """
     engine = get_engine()
     with engine.connect() as connection:
         result = pd.read_sql(query, connection)
+    logger.info("SQL-запрос выполнен: %d строк, %d колонок", *result.shape)
     return result
 
+# функция для загрузки данных из REST API
 def load_api(url, params=None, data_key=None):
-    """Загружает данные из API и возвращает их в виде DataFrame.
-    
+    """Загружает данные из REST API и возвращает их в виде DataFrame.
+
     Аргументы:
-        url (str): URL-адрес API.
+        url (str): Адрес API.
         params (dict, optional): Параметры запроса. По умолчанию None.
-        data_key (str, optional): Ключ в JSON-ответе, содержащий данные. 
-                                  Если None, используется весь ответ. 
-                                  По умолчанию None.
-    
+        data_key (str, optional): Ключ в JSON-ответе, где лежат данные.
+            Если None, используется весь ответ. По умолчанию None.
+
     Возвращает:
-        pd.DataFrame: DataFrame с данными из API.
+        pd.DataFrame: Таблица с данными из API.
+
+    Исключения:
+        requests.HTTPError: Если сервер вернул ошибку.
+        KeyError: Если в ответе нет ключа data_key.
     """
-    
-    response = requests.get(url, params=params, timeout=30)  # Устанавливаем таймаут в 30 секунд
-    response.raise_for_status()  # Проверяем успешность запроса
+    response = requests.get(url, params=params, timeout=30)
+    response.raise_for_status()  # ошибка, если сервер ответил неудачей (4xx, 5xx)
     data = response.json()
 
     if data_key:
         if data_key not in data:
+            logger.error("В ответе API нет ключа '%s'", data_key)
             raise KeyError(f"В ответе API нет ключа '{data_key}'")
         data = data[data_key]
-    
-    return pd.DataFrame(data)
+
+    df = pd.DataFrame(data)
+    logger.info("Загружены данные из API %s: %d строк", url, len(df))
+    return df
 
 if __name__ == "__main__":
     # тестируем загрузку из файлов
