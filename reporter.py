@@ -14,6 +14,22 @@ import pandas as pd  # noqa: E402
 import plotly.graph_objects as go  # noqa: E402
 import seaborn as sns  # noqa: E402
 from plotly.subplots import make_subplots  # noqa: E402
+from openpyxl.styles import Font  # noqa: E402
+from reportlab.lib import colors  # noqa: E402
+from reportlab.lib.pagesizes import A4  # noqa: E402
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet  # noqa: E402
+from reportlab.lib.units import mm  # noqa: E402
+from reportlab.lib.utils import ImageReader  # noqa: E402
+from reportlab.pdfbase import pdfmetrics  # noqa: E402
+from reportlab.pdfbase.ttfonts import TTFont  # noqa: E402
+from reportlab.platypus import (  # noqa: E402
+    Image,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 # Журнал для этого модуля; __name__ подставит имя файла — "reporter"
 logger = logging.getLogger(__name__)
@@ -145,6 +161,123 @@ def plot_interactive(series, temperature, output_dir="reports"):
     path = output_dir / "consumption_vs_temperature.html"
     fig.write_html(str(path))
     logger.info("Интерактивный график сохранён: %s", path)
+    return path
+
+
+def export_to_excel(sheets, path):
+    """Сохраняет несколько таблиц в один Excel-файл, каждую на отдельный лист.
+
+    Заголовки выделяются жирным, ширина колонок подбирается по содержимому,
+    первая строка и первая колонка закрепляются.
+
+    Аргументы:
+        sheets (dict): {название_листа: pd.DataFrame}. Название — до 31 символа.
+        path (str | Path): Путь к файлу .xlsx.
+
+    Возвращает:
+        Path: Путь к сохранённому файлу.
+    """
+    path = Path(path)
+    path.parent.mkdir(exist_ok=True)
+
+    with pd.ExcelWriter(path, engine="openpyxl") as writer:
+        for name, table in sheets.items():
+            table.to_excel(writer, sheet_name=name)
+            ws = writer.sheets[name]  # лист openpyxl для оформления
+
+            # Жирные заголовки
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+
+            # Ширина колонки — по самому длинному значению (но не шире 50)
+            for column_cells in ws.columns:
+                length = max(len(str(c.value)) for c in column_cells if c.value is not None)
+                ws.column_dimensions[column_cells[0].column_letter].width = min(length + 2, 50)
+
+            # Заголовок и первая колонка не уезжают при прокрутке
+            ws.freeze_panes = "B2"
+
+    logger.info("Excel-отчёт сохранён: %s (листы: %s)", path, list(sheets))
+    return path
+
+
+def _register_fonts():
+    """Подключает шрифт DejaVu Sans (с кириллицей) из состава matplotlib."""
+    font_dir = Path(matplotlib.get_data_path()) / "fonts" / "ttf"
+    pdfmetrics.registerFont(TTFont("DejaVu", str(font_dir / "DejaVuSans.ttf")))
+    pdfmetrics.registerFont(TTFont("DejaVu-Bold", str(font_dir / "DejaVuSans-Bold.ttf")))
+
+
+def _df_to_pdf_table(df):
+    """Превращает DataFrame в оформленную таблицу ReportLab."""
+    df = df.reset_index()
+    data = [list(map(str, df.columns))] + df.astype(str).values.tolist()
+
+    table = Table(data, hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVu"),
+        ("FONTNAME", (0, 0), (-1, 0), "DejaVu-Bold"),       # заголовок жирным
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#DCE6F1")),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),               # числа по правому краю
+    ]))
+    return table
+
+
+def build_pdf_report(path, title, summary, tables, images):
+    """Собирает PDF-отчёт: заголовок, ключевые выводы, таблицы и графики.
+
+    Аргументы:
+        path (str | Path): Путь к файлу .pdf.
+        title (str): Заголовок отчёта.
+        summary (list of str): Ключевые выводы, по одному на строку.
+        tables (dict): {подзаголовок: pd.DataFrame} — таблицы для отчёта.
+        images (list): Пути к PNG-графикам.
+
+    Возвращает:
+        Path: Путь к сохранённому файлу.
+    """
+    path = Path(path)
+    path.parent.mkdir(exist_ok=True)
+    _register_fonts()
+
+    # Стили текста на основе стандартных, но со шрифтом с кириллицей
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("TitleRu", parent=styles["Title"], fontName="DejaVu-Bold")
+    heading_style = ParagraphStyle("HeadingRu", parent=styles["Heading2"], fontName="DejaVu-Bold")
+    text_style = ParagraphStyle("TextRu", parent=styles["Normal"], fontName="DejaVu", leading=14)
+
+    content_width = A4[0] - 40 * mm  # ширина страницы минус поля
+
+    # story — список элементов, которые ReportLab выложит на страницы по порядку
+    story = [Paragraph(title, title_style), Spacer(1, 6 * mm)]
+
+    story.append(Paragraph("Ключевые выводы", heading_style))
+    for line in summary:
+        story.append(Paragraph(f"• {line}", text_style))
+
+    for name, table in tables.items():
+        story += [Spacer(1, 5 * mm), Paragraph(name, heading_style), _df_to_pdf_table(table)]
+
+    for image_path in images:
+        # Высоту картинки считаем по её пропорциям, чтобы не исказить
+        img_w, img_h = ImageReader(str(image_path)).getSize()
+        story += [
+            Spacer(1, 5 * mm),
+            Image(str(image_path), width=content_width, height=content_width * img_h / img_w),
+        ]
+
+    doc = SimpleDocTemplate(
+        str(path),
+        pagesize=A4,
+        leftMargin=20 * mm,
+        rightMargin=20 * mm,
+        topMargin=15 * mm,
+        bottomMargin=15 * mm,
+    )
+    doc.build(story)
+    logger.info("PDF-отчёт сохранён: %s", path)
     return path
 
 
