@@ -4,7 +4,10 @@ import logging
 from pathlib import Path
 
 import pandas as pd
-from datetime import date
+import sys
+from datetime import date, datetime
+from logging.handlers import RotatingFileHandler
+from storage import save_model, save_tables
 
 from dotenv import load_dotenv
 
@@ -53,6 +56,38 @@ WEATHER_PARAMS = {
     "daily": "temperature_2m_mean",
     "timezone": "Europe/Moscow",
 }
+
+def setup_logging(log_dir="logs"):
+    """Настраивает журнал: вывод в консоль и в файл с ротацией.
+
+    Файл logs/pipeline.log ограничен 1 МБ; при переполнении он архивируется
+    (pipeline.log.1 ... .5), самый старый архив удаляется.
+
+    Аргументы:
+        log_dir (str): Папка для файлов журнала. По умолчанию "logs".
+
+    Возвращает:
+        None
+    """
+    Path(log_dir).mkdir(exist_ok=True)
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+    file_handler = RotatingFileHandler(
+        Path(log_dir) / "pipeline.log",
+        maxBytes=1_000_000,   # 1 МБ на один файл
+        backupCount=5,        # хранить 5 архивных файлов
+        encoding="utf-8",     # чтобы русский текст читался в любом редакторе
+    )
+    file_handler.setFormatter(formatter)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    root = logging.getLogger()   # общий журнал, в который пишут все модули
+    root.setLevel(logging.INFO)
+    root.handlers.clear()        # на случай повторного вызова — без дублей строк
+    root.addHandler(file_handler)
+    root.addHandler(console_handler)
 
 
 def run_pipeline(output_dir="reports"):
@@ -176,6 +211,38 @@ def run_pipeline(output_dir="reports"):
         # logger.exception пишет в журнал и сообщение, и подробности ошибки
         logger.exception("Не удалось отправить отчёт по почте")
 
+    # 8. Сохраняем результаты в БД
+    # Названия колонок — латиницей, чтобы с ними было удобно работать в SQL и API
+    try:
+        run_at = datetime.now()
+        monthly_db = pd.DataFrame({
+            "month": monthly.index,
+            "kwh": monthly.values,
+            "temperature": monthly_temp.reindex(monthly.index).values,
+            "trend": decomposition.trend.values,
+            "seasonal": decomposition.seasonal.values,
+        })
+        stats_db = pd.DataFrame(stats).T.rename_axis("customer_group").reset_index()
+        # В PostgreSQL имена колонок — строчными, иначе их нужно писать в кавычках
+        metrics_db = metrics_df.rename(columns=str.lower).rename_axis("model_name").reset_index()
+
+        save_tables(
+            {
+                "analysis_monthly": monthly_db,
+                "analysis_stats": stats_db,
+                "model_metrics": metrics_db,
+            },
+            run_at=run_at,
+        )
+        save_model(
+            best_name,
+            results[best_name]["model"],
+            metrics_df.loc[best_name].to_dict(),
+            run_at=run_at,
+        )
+    except Exception:
+        logger.exception("Не удалось сохранить результаты в базу данных")
+
     logger.info("=== Конвейер завершён ===")
     return {
         "excel": excel_path,
@@ -187,8 +254,10 @@ def run_pipeline(output_dir="reports"):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    run_pipeline()
+    setup_logging()
+    try:
+        run_pipeline()
+    except Exception:
+        logger.exception("Конвейер завершился с ошибкой")
+        # Код выхода 1 — сигнал планировщику задач, что запуск неудачный
+        sys.exit(1)
