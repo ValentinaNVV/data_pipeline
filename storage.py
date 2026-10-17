@@ -113,3 +113,22 @@ def load_latest_model(name, engine=None):
         return None
     logger.info("Загружена последняя версия модели '%s'", name)
     return pickle.loads(row[0])  # байты -> модель
+
+def load_last_saved_model(engine=None):
+    """Загружает модель, сохранённую последней (лучшую модель последнего запуска).
+
+    Аргументы:
+        engine (Engine, optional): Подключение к БД. По умолчанию — из get_engine().
+
+    Возвращает:
+        tuple: (название, модель) или (None, None), если моделей в базе нет.
+    """
+    engine = engine or get_engine()
+    query = text("SELECT name, model FROM ml_models ORDER BY run_at DESC, id DESC LIMIT 1")
+    with engine.connect() as conn:
+        row = conn.execute(query).fetchone()
+
+    if row is None:
+        logger.warning("В базе нет сохранённых моделей")
+        return None, None
+    return row[0], pickle.loads(row[1])
