@@ -13,3 +13,6 @@ __pycache__/
 
 # Логи
 logs/
+
+# Кэш pytest
+.pytest_cache/
