@@ -1,10 +1,13 @@
 import logging
+
 import numpy as np
-from validator import detect_outliers_iqr
 import pandas as pd
+
+from validator import detect_outliers_iqr
 
 # Журнал для этого модуля; __name__ подставит имя файла — "cleaner"
 logger = logging.getLogger(__name__)
+
 
 def remove_duplicates(df):
     """Удаляет полностью повторяющиеся строки из DataFrame.
@@ -24,6 +27,7 @@ def remove_duplicates(df):
         logger.info("Дубликатов не найдено")
     return df
 
+
 def convert_dates(df, column, date_format="%d.%m.%Y"):
     """Преобразует колонку с датами в формат datetime.
 
@@ -40,15 +44,18 @@ def convert_dates(df, column, date_format="%d.%m.%Y"):
         return df
 
     df = df.copy()
-    df[column] = pd.to_datetime(df[column], format=date_format, errors='coerce')
+    df[column] = pd.to_datetime(df[column], format=date_format, errors="coerce")
 
     # Сколько значений не удалось превратить в дату
     failed = df[column].isna().sum()
     if failed > 0:
-        logger.warning("Не удалось преобразовать в даты %d значений в колонке '%s'", failed, column)
+        logger.warning(
+            "Не удалось преобразовать в даты %d значений в колонке '%s'", failed, column
+        )
     else:
         logger.info("Колонка '%s' успешно преобразована в формат datetime", column)
     return df
+
 
 def fill_missing(df, column, strategy="median", group_by=None):
     """Обрабатывает пропущенные значения в указанной колонке.
@@ -69,7 +76,9 @@ def fill_missing(df, column, strategy="median", group_by=None):
         ValueError: Если указана неизвестная стратегия.
     """
     if strategy not in ("mean", "median", "drop"):
-        raise ValueError(f"Неизвестная стратегия: '{strategy}'. Допустимо: mean, median, drop")
+        raise ValueError(
+            f"Неизвестная стратегия: '{strategy}'. Допустимо: mean, median, drop"
+        )
 
     df = df.copy()
     missing_count = df[column].isna().sum()
@@ -95,10 +104,13 @@ def fill_missing(df, column, strategy="median", group_by=None):
     df[column] = df[column].fillna(fill_values)
     logger.info(
         "Заполнено пропусков в '%s': %d (стратегия: %s%s)",
-        column, missing_count, strategy,
+        column,
+        missing_count,
+        strategy,
         f", по группам '{group_by}'" if group_by else "",
     )
     return df
+
 
 def replace_outliers(df, column, group_by=None):
     """Заменяет выбросы (найденные методом IQR) на пропуски.
@@ -120,7 +132,10 @@ def replace_outliers(df, column, group_by=None):
     logger.info("Выбросы в '%s' заменены на пропуски: %d", column, mask.sum())
     return df
 
-def fill_by_billing_rules(df, column="kwh", group_by="customer_id", date_column="period"):
+
+def fill_by_billing_rules(
+    df, column="kwh", group_by="customer_id", date_column="period"
+):
     """Заполняет пропуски по правилам расчёта при отсутствии показаний.
 
     Порядок:
@@ -167,6 +182,7 @@ def fill_by_billing_rules(df, column="kwh", group_by="customer_id", date_column=
     )
     return df
 
+
 def encode_label(df, columns):
     """Преобразует категориальные колонки в числовые с помощью Label Encoding.
 
@@ -182,12 +198,13 @@ def encode_label(df, columns):
         if col not in df.columns:
             logger.warning("Колонка '%s' не найдена в таблице", col)
             continue
-        categories = df[col].astype('category')
+        categories = df[col].astype("category")
         # Расшифровка до замены: {0: 'физлицо', 1: 'юрлицо'}
         mapping = dict(enumerate(categories.cat.categories))
         df[col] = categories.cat.codes
         logger.info("Колонка '%s' закодирована: %s", col, mapping)
     return df
+
 
 def encode_onehot(df, columns):
     """Преобразует категориальные колонки в бинарные с помощью One-Hot Encoding.
@@ -210,6 +227,7 @@ def encode_onehot(df, columns):
         logger.info("Колонка '%s' преобразована в: %s", col, list(dummies.columns))
     return df
 
+
 def scale_features(df, columns, method="standard"):
     """Масштабирует числовые колонки.
 
@@ -217,7 +235,7 @@ def scale_features(df, columns, method="standard"):
         df (pd.DataFrame): Таблица с данными.
         columns (list of str): Список колонок для масштабирования.
         method (str): Метод масштабирования ("standard", "minmax").
-    
+
     Исключения:
         ValueError: Если указан неизвестный метод.
 
@@ -225,7 +243,9 @@ def scale_features(df, columns, method="standard"):
         pd.DataFrame: Новая таблица с масштабированными колонками.
     """
     if method not in ("standard", "minmax"):
-        raise ValueError(f"Неизвестный метод масштабирования: '{method}'. Допустимо: standard, minmax")
+        raise ValueError(
+            f"Неизвестный метод масштабирования: '{method}'. Допустимо: standard, minmax"
+        )
     df = df.copy()
     for col in columns:
         if col not in df.columns:
@@ -237,6 +257,7 @@ def scale_features(df, columns, method="standard"):
             df[col] = (df[col] - df[col].min()) / (df[col].max() - df[col].min())
         logger.info("Колонка '%s' масштабирована методом '%s'", col, method)
     return df
+
 
 if __name__ == "__main__":
     from loader import load_csv, load_excel

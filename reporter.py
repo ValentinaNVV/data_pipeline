@@ -2,14 +2,14 @@
 # Генерация отчётов: графики (Matplotlib, Seaborn, Plotly), Excel, PDF, отправка по email
 
 import logging
-from pathlib import Path
-
-import matplotlib
 import mimetypes
 import os
 import smtplib
 import ssl
 from email.message import EmailMessage
+from pathlib import Path
+
+import matplotlib
 
 # Рисуем сразу в файлы, без открытия окон — нужно для запуска по расписанию
 matplotlib.use("Agg")
@@ -18,8 +18,8 @@ import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd  # noqa: E402
 import plotly.graph_objects as go  # noqa: E402
 import seaborn as sns  # noqa: E402
-from plotly.subplots import make_subplots  # noqa: E402
 from openpyxl.styles import Font  # noqa: E402
+from plotly.subplots import make_subplots  # noqa: E402
 from reportlab.lib import colors  # noqa: E402
 from reportlab.lib.pagesizes import A4  # noqa: E402
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet  # noqa: E402
@@ -27,9 +27,9 @@ from reportlab.lib.units import mm  # noqa: E402
 from reportlab.lib.utils import ImageReader  # noqa: E402
 from reportlab.pdfbase import pdfmetrics  # noqa: E402
 from reportlab.pdfbase.ttfonts import TTFont  # noqa: E402
-from reportlab.platypus import (  # noqa: E402
+from reportlab.platypus import (
     Image,
-    Paragraph,
+    Paragraph,  # noqa: E402
     SimpleDocTemplate,
     Spacer,
     Table,
@@ -41,8 +41,19 @@ logger = logging.getLogger(__name__)
 
 # Короткие названия месяцев для подписей: MONTHS_SHORT[1] -> "янв"
 MONTHS_SHORT = [
-    "", "янв", "фев", "мар", "апр", "май", "июн",
-    "июл", "авг", "сен", "окт", "ноя", "дек",
+    "",
+    "янв",
+    "фев",
+    "мар",
+    "апр",
+    "май",
+    "июн",
+    "июл",
+    "авг",
+    "сен",
+    "окт",
+    "ноя",
+    "дек",
 ]
 
 
@@ -102,20 +113,22 @@ def plot_seasonality_heatmap(series, output_dir="reports"):
     output_dir = _prepare_dir(output_dir)
 
     # Раскладываем ряд в таблицу: строки — годы, колонки — месяцы
-    table = pd.DataFrame({
-        "year": series.index.year,
-        "month": series.index.month,
-        "kwh": series.values / 1000,
-    })
+    table = pd.DataFrame(
+        {
+            "year": series.index.year,
+            "month": series.index.month,
+            "kwh": series.values / 1000,
+        }
+    )
     pivot = table.pivot(index="year", columns="month", values="kwh")
     pivot.columns = [MONTHS_SHORT[m] for m in pivot.columns]
 
     fig, ax = plt.subplots(figsize=(12, 3.5))
     sns.heatmap(
         pivot,
-        annot=True,          # подписать число в каждой клетке
-        fmt=".0f",           # без знаков после запятой
-        cmap="Blues",        # от светло-голубого (мало) к тёмно-синему (много)
+        annot=True,  # подписать число в каждой клетке
+        fmt=".0f",  # без знаков после запятой
+        cmap="Blues",  # от светло-голубого (мало) к тёмно-синему (много)
         cbar_kws={"label": "тыс. кВт·ч"},
         ax=ax,
     )
@@ -196,8 +209,12 @@ def export_to_excel(sheets, path):
 
             # Ширина колонки — по самому длинному значению (но не шире 50)
             for column_cells in ws.columns:
-                length = max(len(str(c.value)) for c in column_cells if c.value is not None)
-                ws.column_dimensions[column_cells[0].column_letter].width = min(length + 2, 50)
+                length = max(
+                    len(str(c.value)) for c in column_cells if c.value is not None
+                )
+                ws.column_dimensions[column_cells[0].column_letter].width = min(
+                    length + 2, 50
+                )
 
             # Заголовок и первая колонка не уезжают при прокрутке
             ws.freeze_panes = "B2"
@@ -210,7 +227,9 @@ def _register_fonts():
     """Подключает шрифт DejaVu Sans (с кириллицей) из состава matplotlib."""
     font_dir = Path(matplotlib.get_data_path()) / "fonts" / "ttf"
     pdfmetrics.registerFont(TTFont("DejaVu", str(font_dir / "DejaVuSans.ttf")))
-    pdfmetrics.registerFont(TTFont("DejaVu-Bold", str(font_dir / "DejaVuSans-Bold.ttf")))
+    pdfmetrics.registerFont(
+        TTFont("DejaVu-Bold", str(font_dir / "DejaVuSans-Bold.ttf"))
+    )
 
 
 def _df_to_pdf_table(df):
@@ -219,14 +238,18 @@ def _df_to_pdf_table(df):
     data = [list(map(str, df.columns))] + df.astype(str).values.tolist()
 
     table = Table(data, hAlign="LEFT")
-    table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), "DejaVu"),
-        ("FONTNAME", (0, 0), (-1, 0), "DejaVu-Bold"),       # заголовок жирным
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#DCE6F1")),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),               # числа по правому краю
-    ]))
+    table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (-1, -1), "DejaVu"),
+                ("FONTNAME", (0, 0), (-1, 0), "DejaVu-Bold"),  # заголовок жирным
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#DCE6F1")),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("ALIGN", (1, 1), (-1, -1), "RIGHT"),  # числа по правому краю
+            ]
+        )
+    )
     return table
 
 
@@ -249,9 +272,15 @@ def build_pdf_report(path, title, summary, tables, images):
 
     # Стили текста на основе стандартных, но со шрифтом с кириллицей
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle("TitleRu", parent=styles["Title"], fontName="DejaVu-Bold")
-    heading_style = ParagraphStyle("HeadingRu", parent=styles["Heading2"], fontName="DejaVu-Bold")
-    text_style = ParagraphStyle("TextRu", parent=styles["Normal"], fontName="DejaVu", leading=14)
+    title_style = ParagraphStyle(
+        "TitleRu", parent=styles["Title"], fontName="DejaVu-Bold"
+    )
+    heading_style = ParagraphStyle(
+        "HeadingRu", parent=styles["Heading2"], fontName="DejaVu-Bold"
+    )
+    text_style = ParagraphStyle(
+        "TextRu", parent=styles["Normal"], fontName="DejaVu", leading=14
+    )
 
     content_width = A4[0] - 40 * mm  # ширина страницы минус поля
 
@@ -263,14 +292,22 @@ def build_pdf_report(path, title, summary, tables, images):
         story.append(Paragraph(f"• {line}", text_style))
 
     for name, table in tables.items():
-        story += [Spacer(1, 5 * mm), Paragraph(name, heading_style), _df_to_pdf_table(table)]
+        story += [
+            Spacer(1, 5 * mm),
+            Paragraph(name, heading_style),
+            _df_to_pdf_table(table),
+        ]
 
     for image_path in images:
         # Высоту картинки считаем по её пропорциям, чтобы не исказить
         img_w, img_h = ImageReader(str(image_path)).getSize()
         story += [
             Spacer(1, 5 * mm),
-            Image(str(image_path), width=content_width, height=content_width * img_h / img_w),
+            Image(
+                str(image_path),
+                width=content_width,
+                height=content_width * img_h / img_w,
+            ),
         ]
 
     doc = SimpleDocTemplate(
@@ -308,7 +345,11 @@ def send_report_email(attachments, subject, body, recipients=None):
     user = os.getenv("SMTP_USER")
     password = os.getenv("SMTP_PASSWORD")
     if recipients is None:
-        recipients = [r.strip() for r in os.getenv("REPORT_RECIPIENTS", "").split(",") if r.strip()]
+        recipients = [
+            r.strip()
+            for r in os.getenv("REPORT_RECIPIENTS", "").split(",")
+            if r.strip()
+        ]
 
     if not all([host, user, password]) or not recipients:
         logger.warning("Настройки почты не заданы в .env — отправка отчёта пропущена")
@@ -327,7 +368,10 @@ def send_report_email(attachments, subject, body, recipients=None):
         mime_type, _ = mimetypes.guess_type(file_path.name)
         maintype, subtype = (mime_type or "application/octet-stream").split("/", 1)
         msg.add_attachment(
-            file_path.read_bytes(), maintype=maintype, subtype=subtype, filename=file_path.name
+            file_path.read_bytes(),
+            maintype=maintype,
+            subtype=subtype,
+            filename=file_path.name,
         )
 
     # Защищённое соединение с почтовым сервером, вход и отправка
@@ -336,12 +380,22 @@ def send_report_email(attachments, subject, body, recipients=None):
         server.login(user, password)
         server.send_message(msg)
 
-    logger.info("Отчёт отправлен: %s (вложения: %s)", recipients, [Path(p).name for p in attachments])
+    logger.info(
+        "Отчёт отправлен: %s (вложения: %s)",
+        recipients,
+        [Path(p).name for p in attachments],
+    )
     return True
+
 
 if __name__ == "__main__":
     from analyzer import aggregate_monthly, decompose_series
-    from cleaner import convert_dates, fill_by_billing_rules, remove_duplicates, replace_outliers
+    from cleaner import (
+        convert_dates,
+        fill_by_billing_rules,
+        remove_duplicates,
+        replace_outliers,
+    )
     from loader import load_api, load_csv
 
     logging.basicConfig(

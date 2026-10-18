@@ -35,10 +35,12 @@ def test_convert_dates_day_first():
 
 
 def test_fill_missing_median_by_group():
-    df = pd.DataFrame({
-        "customer_id": [1, 1, 1, 2, 2, 2],
-        "kwh": [10.0, np.nan, 30.0, 1000.0, np.nan, 3000.0],
-    })
+    df = pd.DataFrame(
+        {
+            "customer_id": [1, 1, 1, 2, 2, 2],
+            "kwh": [10.0, np.nan, 30.0, 1000.0, np.nan, 3000.0],
+        }
+    )
     result = fill_missing(df, "kwh", strategy="median", group_by="customer_id")
     # Медиана своего абонента: 20 для первого, 2000 для второго
     assert result["kwh"].tolist() == [10.0, 20.0, 30.0, 1000.0, 2000.0, 3000.0]
@@ -57,18 +59,20 @@ def test_fill_missing_unknown_strategy_raises():
 
 def test_fill_by_billing_rules():
     """Пропуск — тот же месяц прошлого года; если его нет — предыдущий месяц."""
-    df = pd.DataFrame({
-        "customer_id": [1] * 24,
-        "period": pd.date_range("2023-01-01", periods=24, freq="MS"),
-        "kwh": [100.0 + i for i in range(24)],   # 100, 101, ..., 123
-    })
-    df.loc[1, "kwh"] = np.nan    # февраль 2023: прошлого года нет
-    df.loc[12, "kwh"] = np.nan   # январь 2024: есть январь 2023 = 100
+    df = pd.DataFrame(
+        {
+            "customer_id": [1] * 24,
+            "period": pd.date_range("2023-01-01", periods=24, freq="MS"),
+            "kwh": [100.0 + i for i in range(24)],  # 100, 101, ..., 123
+        }
+    )
+    df.loc[1, "kwh"] = np.nan  # февраль 2023: прошлого года нет
+    df.loc[12, "kwh"] = np.nan  # январь 2024: есть январь 2023 = 100
 
     result = fill_by_billing_rules(df)
 
-    assert result.loc[12, "kwh"] == 100.0   # по прошлому году (а не 111 из декабря)
-    assert result.loc[1, "kwh"] == 100.0    # по ближайшему предыдущему месяцу
+    assert result.loc[12, "kwh"] == 100.0  # по прошлому году (а не 111 из декабря)
+    assert result.loc[1, "kwh"] == 100.0  # по ближайшему предыдущему месяцу
     assert result["kwh"].isna().sum() == 0
 
 

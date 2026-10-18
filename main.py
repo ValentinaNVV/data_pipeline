@@ -1,16 +1,13 @@
 # Точка входа: запускает весь конвейер — загрузка, валидация, очистка, анализ, отчёты
 
 import logging
-from pathlib import Path
-
-import pandas as pd
 import sys
 from datetime import date, datetime
 from logging.handlers import RotatingFileHandler
-from storage import save_model, save_tables
+from pathlib import Path
 
+import pandas as pd
 from dotenv import load_dotenv
-
 
 from analyzer import (
     MONTHS,
@@ -39,6 +36,7 @@ from reporter import (
     plot_trend,
     send_report_email,
 )
+from storage import save_model, save_tables
 from validator import check_duplicates, check_missing, check_types, detect_outliers_iqr
 
 # Загружаем настройки из .env (база данных, почта)
@@ -57,6 +55,7 @@ WEATHER_PARAMS = {
     "timezone": "Europe/Moscow",
 }
 
+
 def setup_logging(log_dir="logs"):
     """Настраивает журнал: вывод в консоль и в файл с ротацией.
 
@@ -74,18 +73,18 @@ def setup_logging(log_dir="logs"):
 
     file_handler = RotatingFileHandler(
         Path(log_dir) / "pipeline.log",
-        maxBytes=1_000_000,   # 1 МБ на один файл
-        backupCount=5,        # хранить 5 архивных файлов
-        encoding="utf-8",     # чтобы русский текст читался в любом редакторе
+        maxBytes=1_000_000,  # 1 МБ на один файл
+        backupCount=5,  # хранить 5 архивных файлов
+        encoding="utf-8",  # чтобы русский текст читался в любом редакторе
     )
     file_handler.setFormatter(formatter)
 
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
 
-    root = logging.getLogger()   # общий журнал, в который пишут все модули
+    root = logging.getLogger()  # общий журнал, в который пишут все модули
     root.setLevel(logging.INFO)
-    root.handlers.clear()        # на случай повторного вызова — без дублей строк
+    root.handlers.clear()  # на случай повторного вызова — без дублей строк
     root.addHandler(file_handler)
     root.addHandler(console_handler)
 
@@ -113,7 +112,9 @@ def run_pipeline(output_dir="reports"):
     # 2. Валидация сырых данных
     check_duplicates(consumption)
     check_missing(consumption)
-    check_types(consumption, {"customer_id": "numeric", "period": "datetime", "kwh": "numeric"})
+    check_types(
+        consumption, {"customer_id": "numeric", "period": "datetime", "kwh": "numeric"}
+    )
     detect_outliers_iqr(consumption, "kwh", group_by="customer_id")
 
     # 3. Очистка
@@ -146,16 +147,21 @@ def run_pipeline(output_dir="reports"):
     stats_df.index.name = "Группа"
 
     metrics_df = pd.DataFrame(
-        {name: {k: v for k, v in r.items() if k != "model"} for name, r in results.items()}
+        {
+            name: {k: v for k, v in r.items() if k != "model"}
+            for name, r in results.items()
+        }
     ).T
     metrics_df.index.name = "Модель"
 
-    monthly_df = pd.DataFrame({
-        "Расход, кВт·ч": monthly.round(1),
-        "Температура, °C": monthly_temp.round(1),
-        "Тренд": decomposition.trend.round(0),
-        "Сезонная составляющая": decomposition.seasonal.round(0),
-    })
+    monthly_df = pd.DataFrame(
+        {
+            "Расход, кВт·ч": monthly.round(1),
+            "Температура, °C": monthly_temp.round(1),
+            "Тренд": decomposition.trend.round(0),
+            "Сезонная составляющая": decomposition.seasonal.round(0),
+        }
+    )
     monthly_df.index = monthly_df.index.strftime("%m.%Y")
     monthly_df.index.name = "Месяц"
 
@@ -200,12 +206,14 @@ def run_pipeline(output_dir="reports"):
         images=[trend_png, heatmap_png],
     )
 
-     # 7. Рассылка. Ошибка почты не должна "уронить" конвейер: отчёты уже сохранены
+    # 7. Рассылка. Ошибка почты не должна "уронить" конвейер: отчёты уже сохранены
     try:
         send_report_email(
             attachments=[excel_path, pdf_path],
             subject=f"Отчёт по потреблению электроэнергии от {date.today():%d.%m.%Y}",
-            body="\n".join(["Добрый день!", "", "Во вложении автоматический отчёт.", "", *summary]),
+            body="\n".join(
+                ["Добрый день!", "", "Во вложении автоматический отчёт.", "", *summary]
+            ),
         )
     except Exception:
         # logger.exception пишет в журнал и сообщение, и подробности ошибки
@@ -215,16 +223,20 @@ def run_pipeline(output_dir="reports"):
     # Названия колонок — латиницей, чтобы с ними было удобно работать в SQL и API
     try:
         run_at = datetime.now()
-        monthly_db = pd.DataFrame({
-            "month": monthly.index,
-            "kwh": monthly.values,
-            "temperature": monthly_temp.reindex(monthly.index).values,
-            "trend": decomposition.trend.values,
-            "seasonal": decomposition.seasonal.values,
-        })
+        monthly_db = pd.DataFrame(
+            {
+                "month": monthly.index,
+                "kwh": monthly.values,
+                "temperature": monthly_temp.reindex(monthly.index).values,
+                "trend": decomposition.trend.values,
+                "seasonal": decomposition.seasonal.values,
+            }
+        )
         stats_db = pd.DataFrame(stats).T.rename_axis("customer_group").reset_index()
         # В PostgreSQL имена колонок — строчными, иначе их нужно писать в кавычках
-        metrics_db = metrics_df.rename(columns=str.lower).rename_axis("model_name").reset_index()
+        metrics_db = (
+            metrics_df.rename(columns=str.lower).rename_axis("model_name").reset_index()
+        )
 
         save_tables(
             {

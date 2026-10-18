@@ -4,7 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from analyzer import aggregate_monthly, basic_stats, decompose_series, train_and_evaluate
+from analyzer import (
+    aggregate_monthly,
+    basic_stats,
+    decompose_series,
+    train_and_evaluate,
+)
 
 
 def test_basic_stats():
@@ -14,10 +19,12 @@ def test_basic_stats():
 
 
 def test_aggregate_monthly_sum_and_mean():
-    df = pd.DataFrame({
-        "period": ["2023-01-05", "2023-01-20", "2023-02-10"],
-        "kwh": [1.0, 2.0, 3.0],
-    })
+    df = pd.DataFrame(
+        {
+            "period": ["2023-01-05", "2023-01-20", "2023-02-10"],
+            "kwh": [1.0, 2.0, 3.0],
+        }
+    )
     total = aggregate_monthly(df)
     average = aggregate_monthly(df, agg="mean")
 
@@ -28,8 +35,10 @@ def test_aggregate_monthly_sum_and_mean():
 def test_decompose_series_finds_january_peak():
     """Ряд с заранее известной сезонностью: пик в январе, лёгкий рост."""
     months = pd.date_range("2023-01-01", periods=36, freq="MS")
-    values = [100 + 10 * np.cos(2 * np.pi * (m.month - 1) / 12) + 0.5 * i
-              for i, m in enumerate(months)]
+    values = [
+        100 + 10 * np.cos(2 * np.pi * (m.month - 1) / 12) + 0.5 * i
+        for i, m in enumerate(months)
+    ]
     series = pd.Series(values, index=months)
 
     result = decompose_series(series)

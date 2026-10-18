@@ -1,20 +1,23 @@
 import logging
+
 import numpy as np
 import pandas as pd
-from cleaner import (
-       convert_dates,
-       fill_by_billing_rules,
-       remove_duplicates,
-       replace_outliers,
-   )
-from statsmodels.tsa.seasonal import seasonal_decompose
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
+from statsmodels.tsa.seasonal import seasonal_decompose
+
+from cleaner import (
+    convert_dates,
+    fill_by_billing_rules,
+    remove_duplicates,
+    replace_outliers,
+)
 
 # Журнал для этого модуля; __name__ подставит имя файла — "analyzer"
 logger = logging.getLogger(__name__)
+
 
 def basic_stats(df, column):
     """Вычисляет базовые статистики по указанной колонке DataFrame.
@@ -29,11 +32,16 @@ def basic_stats(df, column):
     stats = {
         "mean": round(float(df[column].mean()), 2),
         "median": round(float(df[column].median()), 2),
-        "mode": round(float(df[column].mode().iloc[0]), 2) if not df[column].mode().empty else np.nan,
+        "mode": (
+            round(float(df[column].mode().iloc[0]), 2)
+            if not df[column].mode().empty
+            else np.nan
+        ),
         "std": round(float(df[column].std()), 2),
     }
     logger.info("Базовые статистики для '%s': %s", column, stats)
     return stats
+
 
 def merge_customer_data(consumption, customers):
     """Объединяет таблицы потребления и абонентов по customer_id (LEFT JOIN).
@@ -54,11 +62,13 @@ def merge_customer_data(consumption, customers):
         logger.warning(
             "После объединения строк стало больше: %d -> %d. "
             "Проверьте дубли customer_id в справочнике абонентов",
-            len(consumption), len(merged),
+            len(consumption),
+            len(merged),
         )
     else:
         logger.info("Таблицы объединены: %d строк, %d колонок", *merged.shape)
     return merged
+
 
 def aggregate_monthly(df, column="kwh", date_column="period", agg="sum"):
     """Агрегирует значения колонки по месяцам и возвращает временной ряд.
@@ -85,18 +95,30 @@ def aggregate_monthly(df, column="kwh", date_column="period", agg="sum"):
     series.index.name = "month"
 
     logger.info(
-       "Данные агрегированы по месяцам (%s): %d месяцев (%s — %s)",
-       agg,
-       len(series),
-       series.index.min().strftime("%m.%Y"),
-       series.index.max().strftime("%m.%Y"),
+        "Данные агрегированы по месяцам (%s): %d месяцев (%s — %s)",
+        agg,
+        len(series),
+        series.index.min().strftime("%m.%Y"),
+        series.index.max().strftime("%m.%Y"),
     )
     return series
 
+
 # Названия месяцев для понятного лога: MONTHS[1] -> "январь"
 MONTHS = [
-    "", "январь", "февраль", "март", "апрель", "май", "июнь",
-    "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
+    "",
+    "январь",
+    "февраль",
+    "март",
+    "апрель",
+    "май",
+    "июнь",
+    "июль",
+    "август",
+    "сентябрь",
+    "октябрь",
+    "ноябрь",
+    "декабрь",
 ]
 
 
@@ -128,9 +150,13 @@ def decompose_series(series, period=12):
 
     logger.info(
         "Рост по тренду: %.1f%%; размах сезона: %.0f; пик: %s; спад: %s",
-        growth, amplitude, peak_month, low_month,
+        growth,
+        amplitude,
+        peak_month,
+        low_month,
     )
     return result
+
 
 def detect_anomalies(result, threshold=3):
     """Ищет аномальные месяцы по остатку временного ряда (метод Z-score).
@@ -163,6 +189,7 @@ def detect_anomalies(result, threshold=3):
             [d.strftime("%m.%Y") for d in anomalies.index],
         )
     return anomalies
+
 
 def build_features(consumption, customers, monthly_temp):
     """Собирает таблицу признаков для модели прогноза расхода.
@@ -201,6 +228,7 @@ def build_features(consumption, customers, monthly_temp):
     logger.info("Таблица признаков: %d строк, признаки: %s", len(X), list(X.columns))
     return X, y
 
+
 def train_and_evaluate(X, y, test_size=0.2, random_state=42):
     """Обучает модели регрессии и оценивает их качество на отложенной выборке.
 
@@ -223,13 +251,15 @@ def train_and_evaluate(X, y, test_size=0.2, random_state=42):
 
     models = {
         "LinearRegression": LinearRegression(),
-        "RandomForest": RandomForestRegressor(n_estimators=100, random_state=random_state),
+        "RandomForest": RandomForestRegressor(
+            n_estimators=100, random_state=random_state
+        ),
     }
 
     results = {}
     for name, model in models.items():
-        model.fit(X_train, y_train)        # обучение на примерах с ответами
-        y_pred = model.predict(X_test)     # прогноз на новых примерах
+        model.fit(X_train, y_train)  # обучение на примерах с ответами
+        y_pred = model.predict(X_test)  # прогноз на новых примерах
 
         metrics = {
             "MAE": round(float(mean_absolute_error(y_test, y_pred)), 2),
@@ -240,6 +270,7 @@ def train_and_evaluate(X, y, test_size=0.2, random_state=42):
         logger.info("Модель %s: %s", name, metrics)
 
     return results
+
 
 if __name__ == "__main__":
     from loader import load_csv, load_excel
@@ -257,7 +288,7 @@ if __name__ == "__main__":
     df = convert_dates(df, "period")
     df = replace_outliers(df, "kwh", group_by="customer_id")
     df = fill_by_billing_rules(df)
-    
+
     # Вычисляем базовые статистики по колонке "kwh"
     stats = basic_stats(df, "kwh")
     print("Базовые статистики по колонке 'kwh':", stats)
@@ -273,7 +304,7 @@ if __name__ == "__main__":
     monthly = aggregate_monthly(df)
     print(monthly.head(12))
 
-    # Разлагаем временной ряд 
+    # Разлагаем временной ряд
     decomposition = decompose_series(monthly)
     print(decomposition.seasonal.head(12))
 

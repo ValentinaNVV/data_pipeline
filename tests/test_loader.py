@@ -10,7 +10,9 @@ def test_load_csv_reads_file(tmp_path):
     """CSV загружается в DataFrame с правильными размерами и значениями."""
     # tmp_path — временная папка, которую pytest создаёт и удаляет сам
     path = tmp_path / "data.csv"
-    pd.DataFrame({"customer_id": [1, 2], "kwh": [100.5, 200.0]}).to_csv(path, index=False)
+    pd.DataFrame({"customer_id": [1, 2], "kwh": [100.5, 200.0]}).to_csv(
+        path, index=False
+    )
 
     df = loader.load_csv(path)
 
@@ -51,7 +53,9 @@ def test_load_api_extracts_data_key(monkeypatch):
     """Из ответа API берётся часть по ключу data_key и превращается в таблицу."""
     payload = {"daily": {"time": ["2023-01-01", "2023-01-02"], "temp": [-3.0, -5.0]}}
     # monkeypatch подменяет requests.get на время теста — в интернет никто не ходит
-    monkeypatch.setattr(loader.requests, "get", lambda *args, **kwargs: FakeResponse(payload))
+    monkeypatch.setattr(
+        loader.requests, "get", lambda *args, **kwargs: FakeResponse(payload)
+    )
 
     df = loader.load_api("https://example.com", data_key="daily")
 
@@ -61,7 +65,9 @@ def test_load_api_extracts_data_key(monkeypatch):
 
 def test_load_api_missing_key_raises(monkeypatch):
     """Если ключа нет в ответе — ошибка KeyError, а не пустая таблица."""
-    monkeypatch.setattr(loader.requests, "get", lambda *args, **kwargs: FakeResponse({"other": []}))
+    monkeypatch.setattr(
+        loader.requests, "get", lambda *args, **kwargs: FakeResponse({"other": []})
+    )
 
     with pytest.raises(KeyError):
         loader.load_api("https://example.com", data_key="daily")

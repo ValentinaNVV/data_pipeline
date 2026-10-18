@@ -12,7 +12,7 @@ from db import get_engine
 logger = logging.getLogger(__name__)
 
 
-#функция для загрузки данных из CSV-файла
+# функция для загрузки данных из CSV-файла
 def load_csv(path):
     """Загружает данные из CSV-файла.
 
@@ -31,6 +31,7 @@ def load_csv(path):
     df = pd.read_csv(path)
     logger.info("Загружен CSV %s: %d строк, %d колонок", path, *df.shape)
     return df
+
 
 # функция для загрузки данных из Excel-файла
 def load_excel(path):
@@ -52,6 +53,7 @@ def load_excel(path):
     logger.info("Загружен Excel %s: %d строк, %d колонок", path, *df.shape)
     return df
 
+
 # функция для загрузки данных из PostgreSQL
 def load_sql(query):
     """Выполняет SQL-запрос к PostgreSQL и возвращает результат.
@@ -69,6 +71,7 @@ def load_sql(query):
         result = pd.read_sql(query, connection)
     logger.info("SQL-запрос выполнен: %d строк, %d колонок", *result.shape)
     return result
+
 
 # функция для загрузки данных из REST API
 def load_api(url, params=None, data_key=None):
@@ -100,6 +103,7 @@ def load_api(url, params=None, data_key=None):
     df = pd.DataFrame(data)
     logger.info("Загружены данные из API %s: %d строк", url, len(df))
     return df
+
 
 if __name__ == "__main__":
     # тестируем загрузку из файлов
@@ -135,7 +139,7 @@ if __name__ == "__main__":
     weather_df = load_api(
         "https://archive-api.open-meteo.com/v1/archive",
         params={
-            "latitude": 55.75,      # координаты города (здесь Москва, можно свои)
+            "latitude": 55.75,  # координаты города (здесь Москва, можно свои)
             "longitude": 37.62,
             "start_date": "2023-01-01",
             "end_date": "2025-12-31",
@@ -146,4 +150,3 @@ if __name__ == "__main__":
     )
     print("\nРазмер:", weather_df.shape)
     print(weather_df.head())
-

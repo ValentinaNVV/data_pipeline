@@ -13,14 +13,20 @@ np.random.seed(42)  # фиксируем случайность: при кажд
 N_CUSTOMERS = 50
 
 # ---------- Таблица абонентов ----------
-customers = pd.DataFrame({
-    "customer_id": range(1, N_CUSTOMERS + 1),
-    "account_number": [f"ЛС-{100000 + i}" for i in range(1, N_CUSTOMERS + 1)],
-    "district": np.random.choice(["Северный", "Южный", "Восточный", "Западный"], N_CUSTOMERS),
-    "tariff": np.random.choice(["одноставочный", "двухзонный"], N_CUSTOMERS),
-    # 80% физлиц, 20% юрлиц
-    "customer_type": np.random.choice(["физлицо", "юрлицо"], N_CUSTOMERS, p=[0.8, 0.2]),
-})
+customers = pd.DataFrame(
+    {
+        "customer_id": range(1, N_CUSTOMERS + 1),
+        "account_number": [f"ЛС-{100000 + i}" for i in range(1, N_CUSTOMERS + 1)],
+        "district": np.random.choice(
+            ["Северный", "Южный", "Восточный", "Западный"], N_CUSTOMERS
+        ),
+        "tariff": np.random.choice(["одноставочный", "двухзонный"], N_CUSTOMERS),
+        # 80% физлиц, 20% юрлиц
+        "customer_type": np.random.choice(
+            ["физлицо", "юрлицо"], N_CUSTOMERS, p=[0.8, 0.2]
+        ),
+    }
+)
 
 # ---------- Таблица потребления ----------
 # Первое число каждого месяца с января 2023 по декабрь 2025 — 36 месяцев
@@ -43,11 +49,13 @@ for _, customer in customers.iterrows():
         # Случайный шум ±8%, как в жизни
         noise = np.random.normal(1, 0.08)
 
-        rows.append({
-            "customer_id": customer["customer_id"],
-            "period": month.strftime("%d.%m.%Y"),
-            "kwh": round(base * season * trend * noise, 1),
-        })
+        rows.append(
+            {
+                "customer_id": customer["customer_id"],
+                "period": month.strftime("%d.%m.%Y"),
+                "kwh": round(base * season * trend * noise, 1),
+            }
+        )
 
 consumption = pd.DataFrame(rows)
 

@@ -1,4 +1,5 @@
 import logging
+
 import pandas as pd
 
 # Журнал для этого модуля; __name__ подставит имя файла — "validator"
@@ -10,6 +11,7 @@ TYPE_CHECKS = {
     "datetime": pd.api.types.is_datetime64_any_dtype,
     "string": pd.api.types.is_string_dtype,
 }
+
 
 def check_types(df, expected):
     """Проверяет, что типы колонок в DataFrame соответствуют ожидаемым.
@@ -36,7 +38,9 @@ def check_types(df, expected):
         if not checker(df[col]):
             logger.warning(
                 "Колонка '%s' имеет тип %s, ожидается %s",
-                col, df[col].dtype, expected_type,
+                col,
+                df[col].dtype,
+                expected_type,
             )
             problems.append(col)
 
@@ -44,6 +48,7 @@ def check_types(df, expected):
     if not problems:
         logger.info("Все типы колонок соответствуют ожидаемым")
     return problems
+
 
 def check_duplicates(df):
     """Проверяет наличие полностью повторяющихся строк в DataFrame.
@@ -53,7 +58,7 @@ def check_duplicates(df):
 
     Возвращает:
         int: Количество найденных дубликатов.
-    """    
+    """
     duplicates = df.duplicated()
     count = duplicates.sum()
     if count > 0:
@@ -61,6 +66,7 @@ def check_duplicates(df):
     else:
         logger.info("Дубликатов не найдено")
     return count
+
 
 def check_missing(df):
     """Проверяет наличие пропущенных значений в каждой колонке DataFrame.
@@ -81,8 +87,8 @@ def check_missing(df):
     else:
         logger.info("Пропущенных значений не найдено")
 
-    
     return missing
+
 
 def detect_outliers_iqr(df, column, group_by=None, k=1.5):
     """Находит выбросы методом межквартильного размаха (IQR).
@@ -122,6 +128,7 @@ def detect_outliers_iqr(df, column, group_by=None, k=1.5):
         logger.info("IQR: выбросов в '%s' не найдено", column)
     return mask
 
+
 def detect_outliers_zscore(df, column, group_by=None, threshold=3):
     """Находит выбросы методом Z-оценки.
 
@@ -137,8 +144,8 @@ def detect_outliers_zscore(df, column, group_by=None, threshold=3):
     """
     if group_by:
         grouped = df.groupby(group_by)[column]
-        mean = grouped.transform('mean')
-        std = grouped.transform('std')
+        mean = grouped.transform("mean")
+        std = grouped.transform("std")
     else:
         mean = df[column].mean()
         std = df[column].std()
@@ -152,6 +159,7 @@ def detect_outliers_zscore(df, column, group_by=None, threshold=3):
     else:
         logger.info("Z-score: выбросов в '%s' не найдено", column)
     return mask
+
 
 if __name__ == "__main__":
     from loader import load_csv

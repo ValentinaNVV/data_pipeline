@@ -74,15 +74,20 @@ def save_model(name, model, metrics, run_at=None, engine=None):
     # engine.begin() — транзакция: либо выполнится всё, либо ничего
     with engine.begin() as conn:
         conn.execute(create_sql)
-        conn.execute(insert_sql, {
-            "run_at": run_at,
-            "name": name,
-            "mae": float(metrics["MAE"]),
-            "rmse": float(metrics["RMSE"]),
-            "r2": float(metrics["R2"]),
-            "model": pickle.dumps(model),  # модель -> байты
-        })
-    logger.info("Модель '%s' сохранена в таблицу 'ml_models' (R2 = %s)", name, metrics["R2"])
+        conn.execute(
+            insert_sql,
+            {
+                "run_at": run_at,
+                "name": name,
+                "mae": float(metrics["MAE"]),
+                "rmse": float(metrics["RMSE"]),
+                "r2": float(metrics["R2"]),
+                "model": pickle.dumps(model),  # модель -> байты
+            },
+        )
+    logger.info(
+        "Модель '%s' сохранена в таблицу 'ml_models' (R2 = %s)", name, metrics["R2"]
+    )
 
 
 def load_latest_model(name, engine=None):
@@ -114,6 +119,7 @@ def load_latest_model(name, engine=None):
     logger.info("Загружена последняя версия модели '%s'", name)
     return pickle.loads(row[0])  # байты -> модель
 
+
 def load_last_saved_model(engine=None):
     """Загружает модель, сохранённую последней (лучшую модель последнего запуска).
 
@@ -124,7 +130,9 @@ def load_last_saved_model(engine=None):
         tuple: (название, модель) или (None, None), если моделей в базе нет.
     """
     engine = engine or get_engine()
-    query = text("SELECT name, model FROM ml_models ORDER BY run_at DESC, id DESC LIMIT 1")
+    query = text(
+        "SELECT name, model FROM ml_models ORDER BY run_at DESC, id DESC LIMIT 1"
+    )
     with engine.connect() as conn:
         row = conn.execute(query).fetchone()
 

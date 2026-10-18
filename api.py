@@ -44,15 +44,21 @@ def _latest_run(table):
     """
     # Имя таблицы подставляется в запрос напрямую, поэтому сюда передаются
     # только наши константы, а не данные от пользователя
-    query = text(f"SELECT * FROM {table} WHERE run_at = (SELECT MAX(run_at) FROM {table})")
+    query = text(
+        f"SELECT * FROM {table} WHERE run_at = (SELECT MAX(run_at) FROM {table})"
+    )
     try:
         df = pd.read_sql(query, get_engine())
     except Exception:
         logger.exception("Ошибка чтения таблицы %s", table)
-        raise HTTPException(status_code=503, detail="База данных недоступна или таблица не создана")
+        raise HTTPException(
+            status_code=503, detail="База данных недоступна или таблица не создана"
+        )
 
     if df.empty:
-        raise HTTPException(status_code=404, detail="Результатов пока нет — запустите main.py")
+        raise HTTPException(
+            status_code=404, detail="Результатов пока нет — запустите main.py"
+        )
 
     # NaN нельзя передать в JSON — заменяем на None (в JSON это null)
     df = df.astype(object).where(df.notna(), None)
@@ -91,7 +97,9 @@ class PredictRequest(BaseModel):
     district: Literal["Восточный", "Западный", "Северный", "Южный"]
     month: int = Field(ge=1, le=12, description="Номер месяца, 1–12")
     temperature: float = Field(description="Средняя температура месяца, °C")
-    kwh_last_year: float = Field(gt=0, description="Расход того же месяца прошлого года, кВт·ч")
+    kwh_last_year: float = Field(
+        gt=0, description="Расход того же месяца прошлого года, кВт·ч"
+    )
 
 
 @app.post("/predict")
@@ -99,7 +107,9 @@ def predict(request: PredictRequest):
     """Прогноз расхода за месяц лучшей сохранённой моделью."""
     name, model = load_last_saved_model()
     if model is None:
-        raise HTTPException(status_code=404, detail="Модель не найдена — запустите main.py")
+        raise HTTPException(
+            status_code=404, detail="Модель не найдена — запустите main.py"
+        )
 
     # Собираем одну строку признаков в том же виде, что при обучении
     row = {
